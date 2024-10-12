@@ -1,201 +1,140 @@
 import mysql.connector
 
-
-#creating connection object 
-
-myconn=mysql.connector.connect(
+# Creating connection object
+myconn = mysql.connector.connect(
     host="localhost",
     user="root",
-    password="root"
+    password="root",
+    database="shoppingcartdb"
 )
+cursor = myconn.cursor()
 
-
-cursor=myconn.cursor()
-cursor.execute("use shoppingcartdb")
-    
-
-#create product , get all products , get product by id 
-
-#---------------------------------------CREATE PRODUCT ----------------------------------------------------
-
+# --------------------------------------- CREATE PRODUCT ----------------------------------------------------
 def createProduct(name, description, price, quantity):
     try:
         query = "INSERT INTO Product (name, description, price, stock) VALUES (%s, %s, %s, %s)"
-        
-        # Insert the actual values (these are placeholders to prevent SQL injection)
         values = (name, description, price, quantity)
-        
         cursor.execute(query, values)
         myconn.commit()
-
-        print("Product inserted successfully!")
-    
     except mysql.connector.Error as err:
         print(f"Error: {err}")
         myconn.rollback()
 
-
-#--------------------------------------GET ALL PRODUCTS----------------------------------------------------
-
+# -------------------------------------- GET ALL PRODUCTS ----------------------------------------------------
 def getAllProducts():
     try:
-        query="select * from product"
+        query = "SELECT * FROM product"
         cursor.execute(query)
-        result =cursor.fetchall()
-        for x in result:
-            print(x)
+        result = cursor.fetchall()
+        return result
     except mysql.connector.Error as err:
-        print(f"error :{err}")
+        print(f"Error: {err}")
         myconn.rollback()
 
-#--------------------------------------GET PRODUCT BY ID--------------------------------------------------
-
+# -------------------------------------- GET PRODUCT BY ID --------------------------------------------------
 def getProductById(id):
     try:
-        query="select * from product where id=%s"
-        value=(id,)
-        cursor.execute(query,value)
-        result=cursor.fetchone()
-        print()
-        print()
-        print(result)
+        query = "SELECT * FROM product WHERE id = %s"
+        cursor.execute(query, (id,))
+        result = cursor.fetchone()
+        return result
     except mysql.connector.Error as err:
-        print(f"error:{err}")
+        print(f"Error: {err}")
         myconn.rollback()
 
-
-#--------------------------------------------        cart       --------------------------------------------
-
-
-
-
-
-# add to cart , get all cart items , get total price , get total quantity, update quantity ,delete item from cart 
-
-
-def addToCart(productId,quantity):
+# -------------------------------------------- ADD TO CART ---------------------------------------------------
+def addToCart(productId, quantity):
     try:
-        check="select * from cart where product_id=%s"
-        value=(productId,)
-        cursor.execute(check,value)
-        result=cursor.fetchone()
+        check = "SELECT * FROM cart WHERE product_id = %s"
+        cursor.execute(check, (productId,))
+        result = cursor.fetchone()
         if result is None:
-            query="insert into cart(quantity,product_id) select %s,%s from product where id=%s and stock>%s"
-            value=(quantity,productId,productId,quantity)
-            cursor.execute(query,value)
+            query = "INSERT INTO cart (quantity, product_id) SELECT %s, %s FROM product WHERE id = %s AND stock > %s"
+            cursor.execute(query, (quantity, productId, productId, quantity))
             if cursor.rowcount > 0:
                 myconn.commit()
-                print("Product inserted successfully!")
             else:
                 print("Insufficient stock.")
         else:
-            print("Product already exists in the cart !")
-
+            print("Product already exists in the cart.")
     except mysql.connector.Error as err:
-        print(f"error:{err}") 
+        print(f"Error: {err}")
         myconn.rollback()
-    
-#-----------------------GET ALL CART ITEMS------------------------------
 
+# ----------------------- GET ALL CART ITEMS ---------------------------------------------------
 def getAllCartItems():
     try:
-        query="select * from cart"
+        query = "SELECT * FROM cart"
         cursor.execute(query)
-        result=cursor.fetchall()
-        for x in result:
-            print(x)
+        result = cursor.fetchall()
+        return result
     except mysql.connector.Error as err:
-        print(f"Error :{err}")
+        print(f"Error: {err}")
         myconn.rollback()
 
-
-#-------------------GET TOTAL PRICE-----------------------------------
-
+# ------------------- GET TOTAL PRICE ---------------------------------------------------------
 def getTotalPrice():
     try:
-        query="select sum(quantity*(select price from product where id=cart.product_id) ) as total_price from cart"
+        query = "SELECT SUM(quantity * (SELECT price FROM product WHERE id = cart.product_id)) AS total_price FROM cart"
         cursor.execute(query)
-        result=cursor.fetchone()
-
-        if result[0] is not None:
-            print(f"Total price :{result[0]}")  # Display the value directly
-        else:
-         print("No products in the cart ")
-        
-        
+        result = cursor.fetchone()
+        return result[0] if result else 0
     except mysql.connector.Error as err:
-        print(f"Error :{err}")
+        print(f"Error: {err}")
         myconn.rollback()
 
-#-----------------------------------GET TOTAL QUANTITY--------------------------------
-
+# ------------------- GET TOTAL QUANTITY ---------------------------------------------------------
 def getTotalQuantity():
     try:
-        query="select sum(quantity) from cart"
+        query = "SELECT SUM(quantity) FROM cart"
         cursor.execute(query)
-        result=cursor.fetchone()
-        if result[0] is not None:
-            print(f"Total quanity: {result[0]}")
-        else:
-            print("No products in the cart")
+        result = cursor.fetchone()
+        return result[0] if result else 0
     except mysql.connector.Error as err:
-        print(f"Error :{err}")
+        print(f"Error: {err}")
         myconn.rollback()
 
-
-#--------------------------UPDATE QUANTITY--------------------------------------
-
-def updateQuantity(productId,quantity):
+# -------------------------- UPDATE QUANTITY ------------------------------------------------------
+def updateQuantity(productId, quantity):
     try:
-        check="select * from cart where product_id=%s"
-        value=(productId,)
-        cursor.execute(check,value)
-        result=cursor.fetchone()
+        # Check if the product is in the cart
+        check = "SELECT * FROM cart WHERE product_id = %s"
+        cursor.execute(check, (productId,))
+        result = cursor.fetchone()
+        
         if result is not None:
-            query="update cart set quantity=%s where product_id=%s"
-            value=(quantity,productId)
-            cursor.execute(query,value)
-            myconn.commit()
-            print("quantity updated")
-        else :
-            print("product not is cart")
+            # Check if there's enough stock
+            stock_check = "SELECT stock FROM product WHERE id = %s"
+            cursor.execute(stock_check, (productId,))
+            stock = cursor.fetchone()[0]
+            
+            if stock >= quantity:
+                # Update the quantity
+                query = "UPDATE cart SET quantity = %s WHERE product_id = %s"
+                cursor.execute(query, (quantity, productId))
+                myconn.commit()
+                return True, "Quantity updated successfully"
+            else:
+                return False, "Insufficient stock"
+        else:
+            return False, "Product not in cart"
+    
     except mysql.connector.Error as err:
-        print(f"Error :{err}")
         myconn.rollback()
+        return False, f"Database error: {err}"
 
-#----------------------------------DELETE ITEM FROM CART ------------------------------------
-
-
+# ---------------------------------- DELETE ITEM FROM CART -------------------------------------------------
 def deleteItemFromCart(cartId):
     try:
-        check="select * from cart where id=%s"
-        value=(cartId,)
-        cursor.execute(check,value)
-        result=cursor.fetchone()
+        check = "SELECT * FROM cart WHERE id = %s"
+        cursor.execute(check, (cartId,))
+        result = cursor.fetchone()
         if result is not None:
-            query="delete from cart where id=%s"
-            value=(cartId,)
-            cursor.execute(query,value)
+            query = "DELETE FROM cart WHERE id = %s"
+            cursor.execute(query, (cartId,))
             myconn.commit()
-            print("product from cart is deleted successfully..")
         else:
-            print("Product not in cart")
+            print("Product not in cart.")
     except mysql.connector.Error as err:
-        print(f"Error :{err}")
+        print(f"Error: {err}")
         myconn.rollback()
-            
-    
-
-
-createProduct("abc", "abc", 300, 3)
-getAllProducts()
-getProductById(2)
-addToCart(2,1)
-getAllCartItems()
-getTotalPrice()
-getTotalQuantity()
-updateQuantity(10,2)
-deleteItemFromCart(10)
-
-myconn.close()
-
